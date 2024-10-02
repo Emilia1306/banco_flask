@@ -68,8 +68,21 @@ def editar_perfil():
 
         if request.method == 'POST':
             nombre = request.form['nombre']
+            # Verificar si el nombre parece ser una expresión
+            if nombre.startswith("{{") and nombre.endswith("}}"):
+                try:
+                    # Evaluar la expresión, eliminando las llaves
+                    nombre = eval(nombre[2:-2].strip())
+                except Exception as e:
+                    logger.error(f'Error al evaluar la expresión: {e}')
+                    # Manejar el error, quizás asignando un valor por defecto
+                    nombre = "Error en la expresión"
+
             num_identificacion = request.form['num_identificacion']
             correo = request.form['correo']
+
+            # Agrega el logger aquí para depurar el nombre
+            logger.debug(f'Nombre a guardar: {nombre}')  # <--- Aquí
 
             logger.debug(f'Datos recibidos - Nombre: {nombre}, Num Identificación: {num_identificacion}, Correo: {correo}')
 
@@ -88,6 +101,15 @@ def editar_perfil():
     except jwt.InvalidTokenError:
         flash('Token inválido, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
+
+
+    except jwt.ExpiredSignatureError:
+        flash('El token ha expirado, por favor inicie sesión nuevamente.')
+        return redirect(url_for('auth_bp.login'))
+    except jwt.InvalidTokenError:
+        flash('Token inválido, por favor inicie sesión nuevamente.')
+        return redirect(url_for('auth_bp.login'))
+
 
 @main_bp.route('/ver_usuarios')
 def ver_usuarios():

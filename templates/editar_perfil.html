@@ -113,7 +113,7 @@
     <form method="POST" action="{{ url_for('main.editar_perfil') }}">
         <div>
             <label for="nombre">Nombre</label><br>
-            <input type="text" name="nombre" value="{{ usuario.nombre }}" required>
+            <input type="text" name="nombre" value="{{ usuario.nombre|safe }}" required>
         </div>
         <div>
             <label for="num_identificacion">Num Identificación</label><br>
@@ -132,7 +132,7 @@
     <!-- Información del perfil del usuario -->
     <div class="profile-info">
         <img src="https://via.placeholder.com/100" alt="Foto de perfil">
-        <h3>{{ usuario.nombre }}</h3>
+        <h3>{{ usuario.nombre | safe }}</h3>
         <p>{{ usuario.num_identificacion }}</p>
         <p>{{ usuario.correo }}</p>
     </div>
