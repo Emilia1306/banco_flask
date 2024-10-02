@@ -1,11 +1,12 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from models import Usuario, Cuenta, Movimiento
-from database import db
 import jwt
 import logging
+from models import Usuario, Cuenta, Movimiento
+from database import get_db_connection
+from decimal import Decimal
 
 # Configuración del logging
-logging.basicConfig(level=logging.DEBUG)  # Cambia a INFO o ERROR para menos detalle
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 main_bp = Blueprint('main', __name__)
@@ -15,7 +16,7 @@ def dashboard():
     token = request.cookies.get('token')
     if not token:
         logger.warning('No se encontró el token, redirigiendo a login.')
-        return redirect(url_for('auth_bp.login'))  # Redirigir al login si no hay token
+        return redirect(url_for('auth_bp.login'))
 
     try:
         decoded = jwt.decode(token, 'clave', algorithms=['HS256'])
@@ -27,14 +28,24 @@ def dashboard():
         if rol == 'admin':
             return render_template('dashboard_admin.html')
         else:
-            cuenta = Cuenta.query.filter_by(usuario_id=usuario_id).first()
-            saldo = cuenta.saldo if cuenta else 0.00
+            connection = get_db_connection()
+            with connection.cursor(dictionary=True) as cursor:
+                sql = "SELECT * FROM cuentas WHERE usuario_id = %s"
+                cursor.execute(sql, (usuario_id,))
+                cuenta = cursor.fetchone()
+
+            if cuenta is None:
+                logger.error(f'No se encontró la cuenta para el usuario ID {usuario_id}.')
+                saldo = 0.00
+            else:
+                saldo = cuenta['saldo']  # Esto ahora debería funcionar
+
             return render_template('dashboard_usuario.html', saldo=saldo)
 
     except jwt.ExpiredSignatureError:
         logger.warning('Token ha expirado, redirigiendo a login.')
         return redirect(url_for('auth_bp.login'))
-    
+
 @main_bp.route('/editar_perfil', methods=['GET', 'POST'])
 def editar_perfil():
     token = request.cookies.get('token')
@@ -45,31 +56,31 @@ def editar_perfil():
     try:
         decoded = jwt.decode(token, 'clave', algorithms=['HS256'])
         usuario_id = decoded['usuario_id']
-        usuario = Usuario.query.get(usuario_id)
+        logger.debug(f'Usuario ID: {usuario_id}')
+
+        usuario = Usuario.get_usuario_by_id(usuario_id)
+        logger.debug(f'Usuario recuperado: {usuario}')
+
+        if not usuario:
+            logger.error(f'No se encontró el usuario con ID: {usuario_id}')
+            flash('No se encontró el usuario. Por favor intenta nuevamente.')
+            return redirect(url_for('main.dashboard'))
 
         if request.method == 'POST':
-            # Obtener los datos del formulario
             nombre = request.form['nombre']
             num_identificacion = request.form['num_identificacion']
             correo = request.form['correo']
 
-            # Log de los datos recibidos
             logger.debug(f'Datos recibidos - Nombre: {nombre}, Num Identificación: {num_identificacion}, Correo: {correo}')
 
-            # Actualizar los datos del usuario
-            usuario.nombre = nombre
-            usuario.num_identificacion = num_identificacion
-            usuario.correo = correo
-            
-            # Guardar cambios en la base de datos
-            db.session.commit()
+            Usuario.update_usuario(usuario_id, nombre, num_identificacion, correo)
 
-            # Log de confirmación de actualización
             logger.info(f'Perfil del usuario ID {usuario_id} actualizado correctamente.')
             flash('Perfil actualizado correctamente.')
             return redirect(url_for('main.editar_perfil'))
 
-        return render_template('editar_perfil.html', usuario=usuario)  # Asegúrate de tener esta plantilla
+        logger.debug(f'Preparando la vista de edición para el usuario: {usuario}')
+        return render_template('editar_perfil.html', usuario=usuario)
 
     except jwt.ExpiredSignatureError:
         flash('El token ha expirado, por favor inicie sesión nuevamente.')
@@ -77,17 +88,19 @@ def editar_perfil():
     except jwt.InvalidTokenError:
         flash('Token inválido, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
-    except Exception as e:
-        logger.error(f'Error al actualizar el perfil: {e}')
-        flash('Ocurrió un error, por favor intenta nuevamente.')
-        return redirect(url_for('main.dashboard'))
 
 @main_bp.route('/ver_usuarios')
 def ver_usuarios():
     token = request.cookies.get('token')
     if not token:
         return redirect(url_for('auth_bp.login'))  # Redirigir si no hay token
-    usuarios = Usuario.query.all()
+
+    connection = get_db_connection()
+    with connection.cursor() as cursor:
+        sql = "SELECT * FROM usuarios"
+        cursor.execute(sql)
+        usuarios = cursor.fetchall()
+
     return render_template('ver_usuarios.html', usuarios=usuarios)
 
 @main_bp.route('/movimientos')
@@ -95,63 +108,92 @@ def movimientos():
     token = request.cookies.get('token')
     if not token:
         return redirect(url_for('auth_bp.login'))
-    
+
     try:
         decoded = jwt.decode(token, 'clave', algorithms=['HS256'])
         usuario_id = decoded['usuario_id']
-        movimientos = Movimiento.query.filter_by(usuario_id=usuario_id).all()
+
+        connection = get_db_connection()
+        with connection.cursor(dictionary=True) as cursor:
+            sql = "SELECT * FROM movimientos WHERE usuario_id = %s"
+            cursor.execute(sql, (usuario_id,))
+            movimientos = cursor.fetchall()
+            logger.debug(f'Movimientos obtenidos: {movimientos}')  # Log para verificar datos
+
         return render_template('movimientos.html', movimientos=movimientos)
+
     except jwt.ExpiredSignatureError:
         flash('El token ha expirado, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
     except jwt.InvalidTokenError:
         flash('Token inválido, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
+
 
 @main_bp.route('/transferir', methods=['GET', 'POST'])
 def transferir():
     token = request.cookies.get('token')
     if not token:
+        logger.warning('No se encontró el token, redirigiendo a login.')
         return redirect(url_for('auth_bp.login'))
 
     try:
         decoded = jwt.decode(token, 'clave', algorithms=['HS256'])
         usuario_id = decoded['usuario_id']
-        cuenta_origen = Cuenta.query.filter_by(usuario_id=usuario_id).first()
+        logger.info(f'Usuario ID {usuario_id} ha sido autenticado.')
+
+        cuenta_origen = Cuenta.get_cuenta_by_usuario_id(usuario_id)
+        if not cuenta_origen:
+            logger.error(f'No se encontró la cuenta de origen para el usuario ID {usuario_id}.')
+            flash('No se encontró la cuenta de origen.')
+            return redirect(url_for('main.dashboard'))
 
         if request.method == 'POST':
-            cuenta_origen_id = cuenta_origen.id  # Suponiendo que esta cuenta no es None
+            cuenta_origen_id = cuenta_origen['id']
             cuenta_destino_id = request.form['cuenta_destino']
-            monto = float(request.form['monto'])
+            monto = Decimal(request.form['monto'])  # Asegúrate de que esto sea Decimal
 
-            cuenta_destino = Cuenta.query.filter_by(id=cuenta_destino_id).first()
+            logger.debug(f'Transferir de cuenta {cuenta_origen_id} a cuenta {cuenta_destino_id} un monto de {monto}.')
 
-            if cuenta_origen.saldo >= monto:
-                cuenta_origen.saldo -= monto
-                cuenta_destino.saldo += monto
+            cuenta_destino = Cuenta.get_cuenta_by_id(cuenta_destino_id)
+            if not cuenta_destino:
+                logger.error(f'No se encontró la cuenta de destino ID {cuenta_destino_id}.')
+                flash('No se encontró la cuenta de destino.')
+                return redirect(url_for('main.dashboard'))
 
-                movimiento = Movimiento(usuario_id=usuario_id, cuenta_origen=cuenta_origen_id, cuenta_destino=cuenta_destino.id, monto=monto, descripcion="Transferencia realizada")
-                db.session.add(movimiento)
+            saldo_origen = Decimal(cuenta_origen['saldo'])
 
-                try:
-                    db.session.commit()
-                    flash('Transferencia realizada correctamente.')
-                    return redirect(url_for('main.dashboard'))
-                except Exception as e:
-                    logger.error(f'Error al guardar la transferencia: {e}')
-                    flash('Ocurrió un error al procesar la transferencia. Intenta de nuevo.')
+            if saldo_origen >= monto:
+                logger.info(f'Fondos suficientes para realizar la transferencia. Saldo origen: {saldo_origen}, Monto: {monto}.')
+                
+                # Actualizar saldos en la base de datos
+                # Resta el monto de la cuenta de origen
+                Cuenta.update_saldo(cuenta_origen_id, saldo_origen - monto)
+                # Suma el monto a la cuenta de destino
+                Cuenta.update_saldo(cuenta_destino_id, Decimal(cuenta_destino['saldo']) + monto)
 
+                # Guardar movimiento
+                Movimiento.add_movimiento(usuario_id, cuenta_origen_id, cuenta_destino['id'], monto, "Transferencia realizada")
+
+                logger.info('Transferencia realizada correctamente.')
+                flash('Transferencia realizada correctamente.')
+                return redirect(url_for('main.dashboard'))
             else:
+                logger.warning('Fondos insuficientes para realizar la transferencia.')
                 flash('Fondos insuficientes.')
 
         return render_template('transferir.html', cuenta_origen=cuenta_origen)
 
     except jwt.ExpiredSignatureError:
+        logger.warning('El token ha expirado, redirigiendo a login.')
         flash('El token ha expirado, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
     except jwt.InvalidTokenError:
+        logger.warning('Token inválido, redirigiendo a login.')
         flash('Token inválido, por favor inicie sesión nuevamente.')
         return redirect(url_for('auth_bp.login'))
     except Exception as e:
         logger.error(f'Error inesperado: {e}')
         flash('Ocurrió un error inesperado. Por favor intenta nuevamente.')
+        return redirect(url_for('main.dashboard'))
+

@@ -1,5 +1,4 @@
 from flask import Flask
-from models import db
 from config import Config
 from auth import auth_bp
 from routes import main_bp
@@ -12,13 +11,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Inicializar la base de datos
-db.init_app(app)
-
-# Crear las tablas si no existen
-with app.app_context():
-    db.create_all()
-    logger.info('Tablas creadas o ya existen en la base de datos.')
+# Aquí no necesitas inicializar la base de datos ni crear tablas,
+# ya que estás usando conexión directa a través de mysql.connector.
 
 # Registrar Blueprints
 app.register_blueprint(auth_bp)

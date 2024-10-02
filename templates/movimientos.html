@@ -88,7 +88,13 @@
                         <td>{{ movimiento.fecha }}</td>
                         <td>{{ movimiento.cuenta_origen }}</td>
                         <td>{{ movimiento.cuenta_destino }}</td>
-                        <td>${{ "{:.2f}".format(movimiento.monto) }}</td>
+                        <td>
+                            {% if movimiento.monto is not none %}
+                                ${{ "{:.2f}".format(movimiento.monto) }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
                         <td>{{ movimiento.descripcion }}</td>
                     </tr>
                 {% endfor %}
