@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Usuario</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: "Nunito", sans-serif;
+            background-color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        h1 {
+            color: #f5a623;
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .saldo-container {
+            margin-bottom: 50px;
+        }
+
+        .saldo {
+            font-size: 4em;
+            color: black;
+            margin: 0;
+        }
+
+        .btn-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 40px;
+        }
+
+        a {
+            display: inline-block;
+            text-decoration: none;
+            padding: 15px 30px;
+            background-color: #0056b3;
+            color: white;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+            min-width: 200px;
+        }
+
+        a:hover {
+            background-color: #003d7a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bienvenido usuario</h1>
+        <div class="saldo-container">
+            <p>Saldo actual</p>
+            <h3 class="saldo">${{ saldo|round(2) }}</h3> <!-- Uso de Jinja2 para mostrar saldo -->
+        </div>
+        <div class="btn-container">
+            <!-- Enlaces usando url_for para rutas dinámicas en Flask -->
+            <a href="{{ url_for('main.editar_perfil') }}">Editar Perfil</a>
+            <a href="{{ url_for('main.transferir') }}">Realizar Transferencias</a>
+            <a href="{{ url_for('main.movimientos') }}">Ver movimientos</a>
+            <a href="{{ url_for('auth_bp.logout') }}">Cerrar Sesión</a>
+        </div>
+    </div>
+</body>
+</html>
