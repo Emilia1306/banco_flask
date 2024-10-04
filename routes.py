@@ -25,10 +25,18 @@ def dashboard():
 
         logger.info(f'Usuario {usuario_id} con rol {rol} accediendo al dashboard.')
 
+        connection = get_db_connection()
+
         if rol == 'admin':
-            return render_template('dashboard_admin.html')
+            # Obtener la lista de usuarios para el administrador
+            with connection.cursor(dictionary=True) as cursor:
+                cursor.execute("SELECT * FROM usuarios")
+                usuarios = cursor.fetchall()  # Obtener todos los usuarios
+
+            return render_template('dashboard_admin.html', usuarios=usuarios)
+
         else:
-            connection = get_db_connection()
+            # Para usuarios normales, obtener su saldo
             with connection.cursor(dictionary=True) as cursor:
                 sql = "SELECT * FROM cuentas WHERE usuario_id = %s"
                 cursor.execute(sql, (usuario_id,))
@@ -38,13 +46,14 @@ def dashboard():
                 logger.error(f'No se encontró la cuenta para el usuario ID {usuario_id}.')
                 saldo = 0.00
             else:
-                saldo = cuenta['saldo']  # Esto ahora debería funcionar
+                saldo = cuenta['saldo']
 
             return render_template('dashboard_usuario.html', saldo=saldo)
 
     except jwt.ExpiredSignatureError:
         logger.warning('Token ha expirado, redirigiendo a login.')
         return redirect(url_for('auth_bp.login'))
+
 
 @main_bp.route('/editar_perfil', methods=['GET', 'POST'])
 def editar_perfil():
